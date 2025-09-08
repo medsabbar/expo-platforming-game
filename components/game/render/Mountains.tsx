@@ -8,6 +8,7 @@ interface MountainsProps {
   nearColor: string;
   t: number;
   screenW: number;
+  lightingFactor?: number; // Optional lighting factor for dynamic opacity
 }
 
 export const Mountains: React.FC<MountainsProps> = ({
@@ -17,26 +18,35 @@ export const Mountains: React.FC<MountainsProps> = ({
   nearColor,
   t,
   screenW,
-}) => (
-  <>
-    <Group opacity={0.55}>
-      {far.map((pth, i) =>
-        pth ? <Path key={i} path={pth} color={farColor} /> : null
-      )}
-    </Group>
-    <Group opacity={0.7}>
-      {near.map((pth, i) =>
-        pth ? (
-          <Group
-            key={i}
-            transform={[
-              { translateX: ((t * 5 + i * 40) % (screenW + 300)) * 0.03 - 20 },
-            ]}
-          >
-            <Path path={pth} color={nearColor} />
-          </Group>
-        ) : null
-      )}
-    </Group>
-  </>
-);
+  lightingFactor = 1.0,
+}) => {
+  // Make mountains fully opaque - rely on color changes for day/night effect
+  const farOpacity = 0.85; // Increased base opacity
+  const nearOpacity = 1.0; // Full opacity for near mountains
+
+  return (
+    <>
+      <Group opacity={farOpacity}>
+        {far.map((pth, i) =>
+          pth ? <Path key={i} path={pth} color={farColor} /> : null
+        )}
+      </Group>
+      <Group opacity={nearOpacity}>
+        {near.map((pth, i) =>
+          pth ? (
+            <Group
+              key={i}
+              transform={[
+                {
+                  translateX: ((t * 5 + i * 40) % (screenW + 300)) * 0.03 - 20,
+                },
+              ]}
+            >
+              <Path path={pth} color={nearColor} />
+            </Group>
+          ) : null
+        )}
+      </Group>
+    </>
+  );
+};

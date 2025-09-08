@@ -52,7 +52,8 @@ export const Ground: React.FC<GroundProps> = ({
       : mixHex(currentBiome.accent, nextBiome.accent, trans);
   return (
     <Group>
-      <Group opacity={1 - trans}>
+      {/* Current ground tiles - always full opacity */}
+      <Group opacity={trans > 0 ? 1 - trans : 1}>
         {curTiles.map((gt, i) => (
           <Rect
             key={`c-${i}`}
@@ -64,6 +65,7 @@ export const Ground: React.FC<GroundProps> = ({
           />
         ))}
       </Group>
+      {/* Next ground tiles - fade in during transition */}
       {trans > 0 && (
         <Group opacity={trans}>
           {nextTiles.map((gt, i) => (
@@ -78,13 +80,14 @@ export const Ground: React.FC<GroundProps> = ({
           ))}
         </Group>
       )}
+      {/* Ground accent line - always full opacity */}
       <Rect
         x={0}
         y={groundY}
         width={screenW}
         height={4}
         color={accentMixed}
-        opacity={0.25}
+        opacity={1.0}
       />
     </Group>
   );

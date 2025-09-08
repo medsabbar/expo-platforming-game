@@ -13,8 +13,18 @@ import { GameStorage } from "@/utils/storage";
 
 // Extracted types & helpers
 import { BIOME_DURATION, BIOME_TRANSITION, BIOMES } from "./engine/biomes";
-import { computeDayFactor, cycleDuration, paletteFor } from "./engine/dayNight";
-import { buildGroundTiles, recycleGroundTiles, TILE_SIZE } from "./engine/ground";
+import {
+  computeDayFactor,
+  computeLightingFactor,
+  cycleDuration,
+  paletteFor,
+  timePhases,
+} from "./engine/dayNight";
+import {
+  buildGroundTiles,
+  recycleGroundTiles,
+  TILE_SIZE,
+} from "./engine/ground";
 import { BiomeDef, GroundTile, Particle, Platform } from "./engine/types";
 import { Clouds } from "./render/Clouds";
 import { Ground } from "./render/Ground";
@@ -292,11 +302,15 @@ export const PlatformerGame: React.FC = () => {
       );
     };
     scrollTiles(
-      activeGroundSet.current === "A" ? groundTilesA.current : groundTilesB.current
+      activeGroundSet.current === "A"
+        ? groundTilesA.current
+        : groundTilesB.current
     );
     if (biomeTransitionRef.current > 0) {
       scrollTiles(
-        activeGroundSet.current === "A" ? groundTilesB.current : groundTilesA.current
+        activeGroundSet.current === "A"
+          ? groundTilesB.current
+          : groundTilesA.current
       );
     }
 
@@ -353,7 +367,9 @@ export const PlatformerGame: React.FC = () => {
     // Particle spawning & update
     const biome = biomeByIndex(biomeIndexRef.current);
     const cycleTNow = (timeRef.current % cycleDuration) / cycleDuration; // before increment in loop
-    const isNight = cycleTNow >= 0.7 || cycleTNow < 0.15 || cycleTNow >= 0.85; // matches star phases
+    const isNight =
+      cycleTNow >= timePhases.sunset.start ||
+      cycleTNow < timePhases.sunrise.end; // Updated night detection
 
     // Spawn rates per second
     if (particlesEnabledRef.current && biome.name === "volcanic") {
@@ -478,35 +494,77 @@ export const PlatformerGame: React.FC = () => {
 
   const pal = paletteFor(cycleT);
 
-  // Sun visibility and position only during daytime-ish (0.15..0.70)
+  // Sun visibility and position during daylight hours
   let sunOpacity = 0;
   let sunX = 0;
   let sunY = 0;
-  if (cycleT >= 0.15 && cycleT <= 0.7) {
-    const dayPhase = (cycleT - 0.15) / (0.7 - 0.15); // 0..1
-    sunOpacity = 0.85;
+  if (cycleT >= timePhases.sunrise.start && cycleT <= timePhases.sunset.end) {
+    const dayStart = timePhases.sunrise.start;
+    const dayEnd = timePhases.sunset.end;
+    const dayPhase = (cycleT - dayStart) / (dayEnd - dayStart); // 0..1
+
+    // Sun opacity varies throughout the day
+    if (cycleT >= timePhases.dawn.start && cycleT <= timePhases.dusk.end) {
+      sunOpacity = 0.85; // Full opacity during main daylight
+    } else {
+      // Fade in during sunrise, fade out during sunset
+      const fadeProgress =
+        cycleT < timePhases.dawn.start
+          ? (cycleT - timePhases.sunrise.start) /
+            (timePhases.dawn.start - timePhases.sunrise.start)
+          : 1 -
+            (cycleT - timePhases.dusk.end) /
+              (timePhases.sunset.end - timePhases.dusk.end);
+      sunOpacity = 0.3 + 0.55 * Math.max(0, Math.min(1, fadeProgress));
+    }
+
     sunX = screenW * (0.1 + 0.8 * dayPhase);
     sunY = screenH * (0.55 - Math.sin(Math.PI * dayPhase) * 0.3);
   }
 
-  // Stars opacity ramp up from 0.70 -> 0.85, full until 0.85.. then down 0.85->1/0.15
+  // Improved star visibility with smoother transitions
   let starAlpha = 0;
-  if (cycleT >= 0.7 && cycleT < 0.85) {
-    starAlpha = (cycleT - 0.7) / 0.15; // 0..1
-  } else if (cycleT >= 0.85 || cycleT < 0.15) {
-    starAlpha = 1;
-  } else if (cycleT >= 0.15 && cycleT < 0.25) {
-    starAlpha = 1 - (cycleT - 0.15) / 0.1; // fade out dawn
+  if (cycleT >= timePhases.sunset.start || cycleT <= timePhases.sunrise.end) {
+    if (cycleT >= timePhases.sunset.end || cycleT <= timePhases.sunrise.start) {
+      // Full night
+      starAlpha = 1;
+    } else if (
+      cycleT >= timePhases.sunset.start &&
+      cycleT < timePhases.sunset.end
+    ) {
+      // Fade in during sunset
+      starAlpha =
+        (cycleT - timePhases.sunset.start) /
+        (timePhases.sunset.end - timePhases.sunset.start);
+    } else if (
+      cycleT > timePhases.sunrise.start &&
+      cycleT <= timePhases.sunrise.end
+    ) {
+      // Fade out during sunrise
+      starAlpha =
+        1 -
+        (cycleT - timePhases.sunrise.start) /
+          (timePhases.sunrise.end - timePhases.sunrise.start);
+    }
   }
 
-  // Day factor to tint mountains (more vivid during day)
+  // Improved mountain visibility with consistently bright colors
+  const lightingFactor = computeLightingFactor(cycleT);
   const dayFactor = computeDayFactor(cycleT);
+
+  // Enhanced color palette for mountains with very bright night colors
   const farBaseDay = "#4b8cc5";
-  const farBaseNight = "#20344a";
+  const farBaseNight = "#6a85a0"; // Very bright night color for excellent visibility
   const nearBaseDay = "#6fb4e6";
-  const nearBaseNight = "#2d4f75";
-  const farColor = mix(farBaseNight, farBaseDay, dayFactor);
-  const nearColor = mix(nearBaseNight, nearBaseDay, dayFactor);
+  const nearBaseNight = "#85a5c5"; // Very bright night color for excellent visibility
+
+  // Use lighting factor to interpolate colors, ensuring minimum brightness
+  const farColor = mix(farBaseNight, farBaseDay, Math.max(0.5, lightingFactor));
+  const nearColor = mix(
+    nearBaseNight,
+    nearBaseDay,
+    Math.max(0.5, lightingFactor)
+  );
 
   // Ground strip color blend
 
@@ -552,8 +610,8 @@ export const PlatformerGame: React.FC = () => {
       if (target === "A") groundTilesA.current = tiles;
       else groundTilesB.current = tiles;
     },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  [biomeByIndex, screenW, groundYApprox] // exclude dayFactor so we don't rebuild every frame
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [biomeByIndex, screenW, groundYApprox] // exclude dayFactor so we don't rebuild every frame
   );
 
   useEffect(() => {
@@ -589,6 +647,7 @@ export const PlatformerGame: React.FC = () => {
             nearColor={nearColor}
             t={t}
             screenW={screenW}
+            lightingFactor={lightingFactor}
           />
           <Clouds cloudPath={cloudPath.current} screenW={screenW} t={t} />
           <Ground
