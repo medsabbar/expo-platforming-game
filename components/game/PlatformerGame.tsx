@@ -38,7 +38,7 @@ export const PlatformerGame: React.FC = () => {
 
   const gravity = 1700; // slightly stronger for a snappier arc
   const jumpVelocity = -780; // faster initial lift for a smoother perceived jump
-  const scrollSpeed = 180; // slowed platform speed for calmer motion
+  const scrollSpeed = 120; // reduced platform speed for more manageable movement
   const platforms = useRef<Platform[]>([]);
   const score = useRef(0);
   const gameOver = useRef(false);
@@ -307,7 +307,7 @@ export const PlatformerGame: React.FC = () => {
     // Particle spawning & update
     const biome = biomeByIndex(biomeIndexRef.current);
     const cycleTNow = (timeRef.current % cycleDuration) / cycleDuration; // before increment in loop
-    const isNight = cycleTNow >= 0.7 || cycleTNow < 0.15 || cycleTNow >= 0.85; // matches star phases
+    const isNight = cycleTNow >= 0.65 || cycleTNow < 0.2; // updated for new transition timings
 
     // Spawn rates per second
     if (particlesEnabledRef.current && biome.name === "volcanic") {
@@ -432,25 +432,25 @@ export const PlatformerGame: React.FC = () => {
 
   const pal = paletteFor(cycleT);
 
-  // Sun visibility and position only during daytime-ish (0.15..0.70)
+  // Sun visibility and position during daytime-ish (0.2..0.65) - adjusted for new transitions
   let sunOpacity = 0;
   let sunX = 0;
   let sunY = 0;
-  if (cycleT >= 0.15 && cycleT <= 0.7) {
-    const dayPhase = (cycleT - 0.15) / (0.7 - 0.15); // 0..1
+  if (cycleT >= 0.2 && cycleT <= 0.65) {
+    const dayPhase = (cycleT - 0.2) / (0.65 - 0.2); // 0..1
     sunOpacity = 0.85;
     sunX = screenW * (0.1 + 0.8 * dayPhase);
     sunY = screenH * (0.55 - Math.sin(Math.PI * dayPhase) * 0.3);
   }
 
-  // Stars opacity ramp up from 0.70 -> 0.85, full until 0.85.. then down 0.85->1/0.15
+  // Stars opacity with gradual transitions - adjusted for new timings
   let starAlpha = 0;
-  if (cycleT >= 0.7 && cycleT < 0.85) {
-    starAlpha = (cycleT - 0.7) / 0.15; // 0..1
-  } else if (cycleT >= 0.85 || cycleT < 0.15) {
+  if (cycleT >= 0.65 && cycleT < 0.8) {
+    starAlpha = (cycleT - 0.65) / 0.15; // 0..1
+  } else if (cycleT >= 0.8 || cycleT < 0.2) {
     starAlpha = 1;
-  } else if (cycleT >= 0.15 && cycleT < 0.25) {
-    starAlpha = 1 - (cycleT - 0.15) / 0.1; // fade out dawn
+  } else if (cycleT >= 0.2 && cycleT < 0.3) {
+    starAlpha = 1 - (cycleT - 0.2) / 0.1; // fade out dawn
   }
 
   // Day factor to tint mountains (more vivid during day)
@@ -542,6 +542,7 @@ export const PlatformerGame: React.FC = () => {
             nearColor={nearColor}
             t={t}
             screenW={screenW}
+            dayFactor={dayFactor}
           />
           <Clouds cloudPath={cloudPath.current!} screenW={screenW} t={t} />
           <Ground

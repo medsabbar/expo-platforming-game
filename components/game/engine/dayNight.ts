@@ -1,5 +1,5 @@
 // Day/night palette interpolation utilities
-export const cycleDuration = 60; // seconds
+export const cycleDuration = 120; // seconds - increased for more gradual transitions
 
 export const palettes = {
   dawn: ["#f9d29d", "#f9c46b", "#f39b6d"],
@@ -45,12 +45,13 @@ const interpPal = (a: string[], b: string[], tt: number): Pal => ({
 
 export function paletteFor(cycleT: number): Pal {
   const { dawn, day, dusk, night } = palettes;
-  if (cycleT < 0.15) return interpPal(night, dawn, cycleT / 0.15);
-  if (cycleT < 0.3) return interpPal(dawn, day, (cycleT - 0.15) / 0.15);
-  if (cycleT < 0.55) return { top: day[0], mid: day[1], bot: day[2] };
-  if (cycleT < 0.7) return interpPal(day, dusk, (cycleT - 0.55) / 0.15);
-  if (cycleT < 0.85) return interpPal(dusk, night, (cycleT - 0.7) / 0.15);
-  return interpPal(night, dawn, (cycleT - 0.85) / 0.15);
+  // More gradual transitions with longer blend periods
+  if (cycleT < 0.2) return interpPal(night, dawn, cycleT / 0.2);
+  if (cycleT < 0.35) return interpPal(dawn, day, (cycleT - 0.2) / 0.15);
+  if (cycleT < 0.5) return { top: day[0], mid: day[1], bot: day[2] };
+  if (cycleT < 0.65) return interpPal(day, dusk, (cycleT - 0.5) / 0.15);
+  if (cycleT < 0.8) return interpPal(dusk, night, (cycleT - 0.65) / 0.15);
+  return interpPal(night, dawn, (cycleT - 0.8) / 0.2);
 }
 
 export function computeDayFactor(cycleT: number) {
