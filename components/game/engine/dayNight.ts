@@ -56,7 +56,11 @@ function mix(a: string, b: string, t: number) {
   mixed.g = Math.max(minBrightness, mixed.g);
   mixed.b = Math.max(minBrightness, mixed.b);
 
-  return rgbToHex(Math.round(mixed.r), Math.round(mixed.g), Math.round(mixed.b));
+  return rgbToHex(
+    Math.round(mixed.r),
+    Math.round(mixed.g),
+    Math.round(mixed.b)
+  );
 }
 const interpPal = (a: string[], b: string[], tt: number): Pal => ({
   top: mix(a[0], b[0], tt),
