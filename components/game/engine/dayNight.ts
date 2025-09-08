@@ -2,12 +2,12 @@
 export const cycleDuration = 60; // seconds
 
 export const palettes = {
-  dawn: ["#f9d29d", "#f9c46b", "#f39b6d"],
-  sunrise: ["#ffb366", "#ff9a5c", "#ff7a4d"],
+  dawn: ["#ffd29d", "#ffdc6b", "#ffab6d"], // Brighter dawn colors
+  sunrise: ["#ffcc66", "#ffaa5c", "#ff8a4d"], // Enhanced sunrise brightness
   day: ["#a3d9ff", "#68b7ff", "#4fa3f0"],
-  dusk: ["#ffb199", "#ff8e72", "#ff7a4d"], // Use same bright color as sunrise
-  sunset: ["#ff6b8a", "#ff4757", "#ff7a4d"], // Use consistent bright bottom color
-  night: ["#2a3a6a", "#3a4a7a", "#4a5a8a"], // Much brighter night colors
+  dusk: ["#ffcc99", "#ffaa72", "#ff8a4d"], // Brighter dusk colors
+  sunset: ["#ff8b8a", "#ff6757", "#ff8a4d"], // Enhanced sunset colors
+  night: ["#4a5a8a", "#5a6a9a", "#6a7aaa"], // Brighter night colors
 };
 
 // Define time periods for smoother transitions with shorter sunrise/sunset
@@ -51,12 +51,12 @@ function mix(a: string, b: string, t: number) {
   };
 
   // Ensure minimum brightness to prevent pitch black, especially during transitions
-  const minBrightness = 50; // Increased minimum RGB value for better visibility
+  const minBrightness = 80; // Further increased minimum RGB value for better visibility
   mixed.r = Math.max(minBrightness, mixed.r);
   mixed.g = Math.max(minBrightness, mixed.g);
   mixed.b = Math.max(minBrightness, mixed.b);
 
-  return rgbToHex(mixed.r, mixed.g, mixed.b);
+  return rgbToHex(Math.round(mixed.r), Math.round(mixed.g), Math.round(mixed.b));
 }
 const interpPal = (a: string[], b: string[], tt: number): Pal => ({
   top: mix(a[0], b[0], tt),
@@ -80,15 +80,16 @@ export function paletteFor(cycleT: number): Pal {
   cycleT = cycleT % 1;
 
   if (cycleT >= nightPhase.start && cycleT < sunrisePhase.start) {
-    // Deep night
-    return { top: night[0], mid: night[1], bot: night[2] };
+    // Deep night - use the brighter night colors
+    const brightNight = ["#6a7aaa", "#7a8abb", "#8a9acc"]; // Consistent with other transitions
+    return { top: brightNight[0], mid: brightNight[1], bot: brightNight[2] };
   } else if (cycleT >= sunrisePhase.start && cycleT < dawnPhase.start) {
-    // Sunrise transition: use brighter intermediate colors
+    // Sunrise transition: smooth transition from bright night to sunrise
     const t =
       (cycleT - sunrisePhase.start) / (sunrisePhase.end - sunrisePhase.start);
-    // Instead of transitioning from night, transition from a brighter intermediate
-    const brightNight = ["#4a5a8a", "#5a6a9a", "#6a7aaa"]; // Brighter than night
-    return interpPal(brightNight, sunrise, t);
+    // Use an even brighter intermediate to ensure no black sky
+    const brightPreSunrise = ["#6a7aaa", "#7a8abb", "#8a9acc"]; // Very bright pre-sunrise
+    return interpPal(brightPreSunrise, sunrise, t);
   } else if (cycleT >= dawnPhase.start && cycleT < dayPhase.start) {
     // Dawn transition: dawn -> day
     const t = (cycleT - dawnPhase.start) / (dawnPhase.end - dawnPhase.start);
@@ -101,16 +102,17 @@ export function paletteFor(cycleT: number): Pal {
     const t = (cycleT - duskPhase.start) / (duskPhase.end - duskPhase.start);
     return interpPal(day, dusk, t);
   } else if (cycleT >= sunsetPhase.start && cycleT < nightfall.start) {
-    // Sunset transition: use brighter intermediate colors
+    // Sunset transition: smooth transition from dusk to sunset
     const t =
       (cycleT - sunsetPhase.start) / (sunsetPhase.end - sunsetPhase.start);
     return interpPal(dusk, sunset, t);
   } else {
-    // Nightfall: gradual transition to brighter night colors
+    // Nightfall: gradual transition to bright night colors
     const t = (cycleT - nightfall.start) / (nightfall.end - nightfall.start);
-    // Transition to a brighter intermediate before full night
-    const brightNight = ["#4a5a8a", "#5a6a9a", "#6a7aaa"]; // Brighter than night
-    return interpPal(sunset, brightNight, Math.min(0.7, t)); // Stop transition at 70% to avoid full darkness
+    // Use bright intermediate colors to prevent black sky
+    const brightPostSunset = ["#8a7aaa", "#7a8abb", "#6a9acc"]; // Very bright post-sunset
+    const targetNight = ["#6a7aaa", "#7a8abb", "#8a9acc"]; // Keep night bright
+    return interpPal(brightPostSunset, targetNight, Math.min(0.8, t)); // Smooth transition
   }
 }
 
