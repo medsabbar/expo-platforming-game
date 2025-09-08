@@ -92,27 +92,34 @@ export const PlatformerGame: React.FC = () => {
     const baseFar = screenH * 0.72;
     const baseNear = screenH * 0.8;
     let cursor = -80;
-    while (cursor < screenW + 160) {
-      const w = 180 + Math.random() * 140; // width range
-      const h = 120 + Math.random() * 90; // height
-      const peakY = baseFar - h;
-      const path = Skia.Path.MakeFromSVGString(
-        makeTriangle(cursor, w, baseFar, peakY)
-      );
-      if (path) far.push(path);
-      cursor += w * 0.6; // overlap for ridge effect
+    
+    // Try to build mountains with Skia, fallback to empty arrays
+    try {
+      if (Skia?.Path?.MakeFromSVGString) {
+        while (cursor < screenW + 160) {
+          const w = 180 + Math.random() * 140; // width range
+          const h = 120 + Math.random() * 90; // height
+          const peakY = baseFar - h;
+          const path = Skia.Path.MakeFromSVGString(makeTriangle(cursor, w, baseFar, peakY));
+          if (path) far.push(path);
+          cursor += w * 0.6; // overlap for ridge effect
+        }
+        cursor = -60;
+        while (cursor < screenW + 160) {
+          const w = 200 + Math.random() * 160;
+          const h = 160 + Math.random() * 120;
+          const peakY = baseNear - h;
+          const path = Skia.Path.MakeFromSVGString(makeTriangle(cursor, w, baseNear, peakY));
+          if (path) near.push(path);
+          cursor += w * 0.55;
+        }
+      } else {
+        console.warn("Skia not available, mountains will not render");
+      }
+    } catch (e) {
+      console.warn("Mountain generation failed:", e);
     }
-    cursor = -60;
-    while (cursor < screenW + 160) {
-      const w = 200 + Math.random() * 160;
-      const h = 160 + Math.random() * 120;
-      const peakY = baseNear - h;
-      const path = Skia.Path.MakeFromSVGString(
-        makeTriangle(cursor, w, baseNear, peakY)
-      );
-      if (path) near.push(path);
-      cursor += w * 0.55;
-    }
+    
     farMountains.current = far;
     nearMountains.current = near;
   }, [screenH, screenW]);
@@ -397,12 +404,21 @@ export const PlatformerGame: React.FC = () => {
   const stretch = Math.max(0.78, Math.min(1.25, 1 - vy / 1600)); // when going up (vy negative) > 1
   const invStretch = 1 / stretch;
 
-  // Cloud path factory (simple puffy shape)
-  const cloudPath = useRef(
-    Skia.Path.MakeFromSVGString(
-      "M20 30 C10 30 5 22 8 16 C4 5 18 2 24 8 C28 2 40 4 39 14 C48 14 50 22 46 27 C52 40 34 44 30 36 C26 40 16 40 14 34 C10 38 2 36 4 28 Z"
-    )
-  );
+  // Cloud path factory (simple puffy shape) - fallback for web
+  const cloudPath = useRef<any>(null);
+  
+  // Try to create Skia path, fallback gracefully
+  useEffect(() => {
+    try {
+      if (Skia?.Path?.MakeFromSVGString) {
+        cloudPath.current = Skia.Path.MakeFromSVGString(
+          "M20 30 C10 30 5 22 8 16 C4 5 18 2 24 8 C28 2 40 4 39 14 C48 14 50 22 46 27 C52 40 34 44 30 36 C26 40 16 40 14 34 C10 38 2 36 4 28 Z"
+        );
+      }
+    } catch (e) {
+      console.warn("Skia path creation failed, using fallback");
+    }
+  }, []);
   const t = timeRef.current; // seconds
   const cycleT = (t % cycleDuration) / cycleDuration; // 0..1
 
@@ -544,7 +560,9 @@ export const PlatformerGame: React.FC = () => {
             screenW={screenW}
             dayFactor={dayFactor}
           />
-          <Clouds cloudPath={cloudPath.current!} screenW={screenW} t={t} />
+          {cloudPath.current && (
+            <Clouds cloudPath={cloudPath.current} screenW={screenW} t={t} />
+          )}
           <Ground
             activeSet={activeGroundSet.current}
             groundTilesA={groundTilesA.current}
