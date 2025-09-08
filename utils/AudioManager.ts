@@ -111,7 +111,7 @@ class AudioManager {
       const player = this.soundEffects[effect];
       if (player) {
         // Reset to beginning and play
-        player.currentTime = 0;
+        await player.seekTo(0);
         player.volume = this.effectsVolume;
         player.play();
         console.log(`Playing sound effect: ${effect}`);
@@ -129,9 +129,16 @@ class AudioManager {
 
   private playProgrammaticSound(effect: SoundEffect) {
     // Only works on web platform, but provides immediate feedback
-    if (typeof window !== 'undefined' && window.AudioContext) {
+    if (typeof window !== 'undefined' && (window.AudioContext || (window as any).webkitAudioContext)) {
       try {
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const audioContext = new AudioContextClass();
+        
+        // Resume audio context if suspended (Chrome auto-play policy)
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+        
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
 
@@ -155,9 +162,12 @@ class AudioManager {
         }
 
         oscillator.start(audioContext.currentTime);
+        console.log(`Played programmatic sound for: ${effect}`);
       } catch (error) {
-        console.warn('Web Audio API not available:', error);
+        console.warn('Web Audio API error:', error);
       }
+    } else {
+      console.log(`Programmatic sound not available for: ${effect} (not on web)`);
     }
   }
 
