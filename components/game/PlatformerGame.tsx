@@ -11,6 +11,9 @@ import {
 // Storage utility for best score
 import { GameStorage } from "@/utils/storage";
 
+// Audio manager for sounds and music
+import { audioManager } from "@/utils/AudioManager";
+
 // Extracted types & helpers
 import { BIOME_DURATION, BIOME_TRANSITION, BIOMES } from "./engine/biomes";
 import {
@@ -159,12 +162,22 @@ export const PlatformerGame: React.FC = () => {
     spawnCounter.current = 0;
   }, [screenH]);
 
-  // Load best score on component mount
+  // Load best score and initialize audio on component mount
   useEffect(() => {
     const loadBestScore = async () => {
       bestScore.current = await GameStorage.getBestScore();
     };
+    const initializeAudio = async () => {
+      await audioManager.initialize();
+      await audioManager.playBackgroundMusic();
+    };
     loadBestScore();
+    initializeAudio();
+    
+    // Cleanup audio when component unmounts
+    return () => {
+      audioManager.cleanup();
+    };
   }, []);
 
   useEffect(() => {
@@ -211,11 +224,15 @@ export const PlatformerGame: React.FC = () => {
       player.current.onGround = false;
       lastJumpTime.current = now;
       doubleJumpAvailable.current = true;
+      // Play jump sound effect
+      audioManager.playSoundEffect('jump');
     } else if (doubleJumpAvailable.current) {
       player.current.vy = jumpVelocity * 0.85; // reduced force for second jump
       player.current.onGround = false;
       doubleJumpAvailable.current = false;
       lastJumpTime.current = now;
+      // Play jump sound effect for double jump
+      audioManager.playSoundEffect('jump');
     }
   };
 
@@ -356,6 +373,8 @@ export const PlatformerGame: React.FC = () => {
     // Fail condition: falls below screen
     if (pl.y > screenH + 40) {
       gameOver.current = true;
+      // Play death sound effect
+      audioManager.playSoundEffect('death');
       // Update best score when game ends
       GameStorage.updateBestScoreIfHigher(score.current).then((updated) => {
         if (updated) {
