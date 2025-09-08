@@ -115,9 +115,9 @@ export const PlatformerGame: React.FC = () => {
       const w = 180 + Math.random() * 140; // width range
       const h = 120 + Math.random() * 90; // height
       const peakY = baseFar - h;
-      const path = Skia?.Path?.MakeFromSVGString(
+      const path = (Skia && Skia.Path) ? Skia.Path.MakeFromSVGString(
         makeTriangle(cursor, w, baseFar, peakY)
-      );
+      ) : null;
       if (path) far.push(path);
       cursor += w * 0.6; // overlap for ridge effect
     }
@@ -126,9 +126,9 @@ export const PlatformerGame: React.FC = () => {
       const w = 200 + Math.random() * 160;
       const h = 160 + Math.random() * 120;
       const peakY = baseNear - h;
-      const path = Skia?.Path?.MakeFromSVGString(
+      const path = (Skia && Skia.Path) ? Skia.Path.MakeFromSVGString(
         makeTriangle(cursor, w, baseNear, peakY)
-      );
+      ) : null;
       if (path) near.push(path);
       cursor += w * 0.55;
     }
@@ -480,9 +480,9 @@ export const PlatformerGame: React.FC = () => {
 
   // Cloud path factory (simple puffy shape)
   const cloudPath = useRef(
-    Skia?.Path?.MakeFromSVGString(
+    (Skia && Skia.Path) ? Skia.Path.MakeFromSVGString(
       "M20 30 C10 30 5 22 8 16 C4 5 18 2 24 8 C28 2 40 4 39 14 C48 14 50 22 46 27 C52 40 34 44 30 36 C26 40 16 40 14 34 C10 38 2 36 4 28 Z"
-    ) || null
+    ) : null
   );
   const t = timeRef.current; // seconds
   const cycleT = (t % cycleDuration) / cycleDuration; // 0..1
