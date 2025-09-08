@@ -8,6 +8,9 @@ import {
   View,
 } from "react-native";
 
+// Storage utility for best score
+import { GameStorage } from "@/utils/storage";
+
 // Extracted types & helpers
 import { BIOME_DURATION, BIOME_TRANSITION, BIOMES } from "./engine/biomes";
 import { computeDayFactor, cycleDuration, paletteFor } from "./engine/dayNight";
@@ -41,6 +44,7 @@ export const PlatformerGame: React.FC = () => {
   const scrollSpeed = 180; // slowed platform speed for calmer motion
   const platforms = useRef<Platform[]>([]);
   const score = useRef(0);
+  const bestScore = useRef(0);
   const gameOver = useRef(false);
   const spawnCounter = useRef(0);
   const nextPlatformId = useRef(1);
@@ -96,7 +100,7 @@ export const PlatformerGame: React.FC = () => {
       const w = 180 + Math.random() * 140; // width range
       const h = 120 + Math.random() * 90; // height
       const peakY = baseFar - h;
-      const path = Skia.Path.MakeFromSVGString(
+      const path = Skia?.Path?.MakeFromSVGString(
         makeTriangle(cursor, w, baseFar, peakY)
       );
       if (path) far.push(path);
@@ -107,7 +111,7 @@ export const PlatformerGame: React.FC = () => {
       const w = 200 + Math.random() * 160;
       const h = 160 + Math.random() * 120;
       const peakY = baseNear - h;
-      const path = Skia.Path.MakeFromSVGString(
+      const path = Skia?.Path?.MakeFromSVGString(
         makeTriangle(cursor, w, baseNear, peakY)
       );
       if (path) near.push(path);
@@ -142,6 +146,14 @@ export const PlatformerGame: React.FC = () => {
     gameOver.current = false;
     spawnCounter.current = 0;
   }, [screenH]);
+
+  // Load best score on component mount
+  useEffect(() => {
+    const loadBestScore = async () => {
+      bestScore.current = await GameStorage.getBestScore();
+    };
+    loadBestScore();
+  }, []);
 
   useEffect(() => {
     init();
@@ -302,6 +314,12 @@ export const PlatformerGame: React.FC = () => {
     // Fail condition: falls below screen
     if (pl.y > screenH + 40) {
       gameOver.current = true;
+      // Update best score when game ends
+      GameStorage.updateBestScoreIfHigher(score.current).then((updated) => {
+        if (updated) {
+          bestScore.current = score.current;
+        }
+      });
     }
 
     // Particle spawning & update
@@ -399,9 +417,9 @@ export const PlatformerGame: React.FC = () => {
 
   // Cloud path factory (simple puffy shape)
   const cloudPath = useRef(
-    Skia.Path.MakeFromSVGString(
+    Skia?.Path?.MakeFromSVGString(
       "M20 30 C10 30 5 22 8 16 C4 5 18 2 24 8 C28 2 40 4 39 14 C48 14 50 22 46 27 C52 40 34 44 30 36 C26 40 16 40 14 34 C10 38 2 36 4 28 Z"
-    )
+    ) || null
   );
   const t = timeRef.current; // seconds
   const cycleT = (t % cycleDuration) / cycleDuration; // 0..1
@@ -543,7 +561,7 @@ export const PlatformerGame: React.FC = () => {
             t={t}
             screenW={screenW}
           />
-          <Clouds cloudPath={cloudPath.current!} screenW={screenW} t={t} />
+          <Clouds cloudPath={cloudPath.current} screenW={screenW} t={t} />
           <Ground
             activeSet={activeGroundSet.current}
             groundTilesA={groundTilesA.current}
@@ -609,8 +627,14 @@ export const PlatformerGame: React.FC = () => {
       </Pressable>
       <View style={styles.hud} pointerEvents="none">
         <Text style={styles.score}>Score {score.current}</Text>
+        <Text style={styles.bestScore}>Best {bestScore.current}</Text>
         {gameOver.current && (
-          <Text style={styles.gameOver}>Game Over – tap to restart</Text>
+          <View style={styles.gameOverContainer}>
+            <Text style={styles.gameOver}>Game Over – tap to restart</Text>
+            {score.current === bestScore.current && score.current > 0 && (
+              <Text style={styles.newBest}>🎉 New Best Score! 🎉</Text>
+            )}
+          </View>
         )}
       </View>
     </View>
@@ -639,11 +663,32 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
-  gameOver: {
+  bestScore: {
+    color: "#ffd700",
+    fontSize: 18,
+    fontWeight: "500",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    marginTop: 4,
+  },
+  gameOverContainer: {
+    alignItems: "center",
     marginTop: 18,
+  },
+  gameOver: {
     color: "#ff7675",
     fontSize: 18,
     fontWeight: "500",
+  },
+  newBest: {
+    color: "#ffd700",
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 8,
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });
 
