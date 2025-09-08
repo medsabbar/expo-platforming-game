@@ -3,7 +3,7 @@
     "name": "2d-game",
     "slug": "2d-game",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "2dgame",
     "userInterfaceStyle": "automatic",
