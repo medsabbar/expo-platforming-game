@@ -137,6 +137,7 @@ export const PlatformerGame: React.FC = () => {
     player.current.y = baseY - player.current.h;
     player.current.vy = 0;
     player.current.onGround = true;
+    doubleJumpAvailable.current = false; // disarm at start
     score.current = 0;
     gameOver.current = false;
     spawnCounter.current = 0;
@@ -174,16 +175,22 @@ export const PlatformerGame: React.FC = () => {
   };
 
   const lastJumpTime = useRef(0);
+  const doubleJumpAvailable = useRef(false); // armed after initial jump while airborne
   const handleJump = () => {
     if (gameOver.current) {
       init();
       return;
     }
-    // Basic coyote time: allow tiny window after leaving ground
     const now = performance.now();
     if (player.current.onGround || now - lastJumpTime.current < 110) {
       player.current.vy = jumpVelocity;
       player.current.onGround = false;
+      lastJumpTime.current = now;
+      doubleJumpAvailable.current = true;
+    } else if (doubleJumpAvailable.current) {
+      player.current.vy = jumpVelocity * 0.85; // reduced force for second jump
+      player.current.onGround = false;
+      doubleJumpAvailable.current = false;
       lastJumpTime.current = now;
     }
   };
@@ -283,6 +290,7 @@ export const PlatformerGame: React.FC = () => {
         pl.y = plat.y - pl.h;
         pl.vy = 0;
         pl.onGround = true;
+        doubleJumpAvailable.current = false; // landing disarms until next primary jump
       }
       // Scoring when player passes center of platform
       if (!plat.passed && plat.x + plat.w < pl.x) {
