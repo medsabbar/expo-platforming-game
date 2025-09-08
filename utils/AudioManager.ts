@@ -32,21 +32,55 @@ class AudioManager {
 
   private async loadSounds() {
     try {
-      // For now, we'll use a simple approach without external files
-      // These will be replaced with actual audio files later
-      console.log('Audio manager initialized - ready for sound files');
+      // Load background music
+      const { sound: backgroundMusic } = await Audio.Sound.createAsync(
+        require('@/assets/sounds/background-music.mp3'),
+        { 
+          shouldPlay: false, 
+          isLooping: true,
+          volume: this.musicVolume 
+        }
+      );
+      this.backgroundMusic = backgroundMusic;
+
+      // Load jump sound effect
+      const { sound: jumpSound } = await Audio.Sound.createAsync(
+        require('@/assets/sounds/jump.mp3'),
+        { 
+          shouldPlay: false, 
+          volume: this.effectsVolume 
+        }
+      );
+      this.soundEffects.jump = jumpSound;
+
+      // Load death sound effect
+      const { sound: deathSound } = await Audio.Sound.createAsync(
+        require('@/assets/sounds/death.mp3'),
+        { 
+          shouldPlay: false, 
+          volume: this.effectsVolume 
+        }
+      );
+      this.soundEffects.death = deathSound;
+
+      console.log('Audio files loaded successfully');
     } catch (error) {
-      console.warn('Failed to load sounds:', error);
+      console.warn('Failed to load audio files, falling back to programmatic sounds:', error);
+      // Keep the fallback programmatic sound functionality
     }
   }
 
   async playBackgroundMusic() {
-    if (this.isMuted || this.backgroundMusic) return;
+    if (this.isMuted) return;
 
     try {
-      // For now, just log that we would play background music
-      // This will be implemented with actual audio files
-      console.log('Background music would start playing');
+      if (this.backgroundMusic) {
+        await this.backgroundMusic.setVolumeAsync(this.musicVolume);
+        await this.backgroundMusic.playAsync();
+        console.log('Background music started playing');
+      } else {
+        console.log('Background music not loaded, would start playing');
+      }
     } catch (error) {
       console.warn('Failed to play background music:', error);
     }
@@ -68,11 +102,20 @@ class AudioManager {
     if (this.isMuted) return;
 
     try {
-      // For now, create a simple programmatic sound using Web Audio API
-      // This will work in web version and provide immediate feedback
-      this.playProgrammaticSound(effect);
+      const sound = this.soundEffects[effect];
+      if (sound) {
+        // Reset to beginning and play
+        await sound.setPositionAsync(0);
+        await sound.setVolumeAsync(this.effectsVolume);
+        await sound.playAsync();
+      } else {
+        // Fallback to programmatic sound for web or if file failed to load
+        this.playProgrammaticSound(effect);
+      }
     } catch (error) {
       console.warn(`Failed to play sound effect ${effect}:`, error);
+      // Fallback to programmatic sound
+      this.playProgrammaticSound(effect);
     }
   }
 
@@ -113,9 +156,19 @@ class AudioManager {
   setMuted(muted: boolean) {
     this.isMuted = muted;
     if (muted) {
-      this.stopBackgroundMusic();
+      this.pauseBackgroundMusic();
     } else {
       this.playBackgroundMusic();
+    }
+  }
+
+  async pauseBackgroundMusic() {
+    if (this.backgroundMusic) {
+      try {
+        await this.backgroundMusic.pauseAsync();
+      } catch (error) {
+        console.warn('Failed to pause background music:', error);
+      }
     }
   }
 
@@ -128,6 +181,14 @@ class AudioManager {
 
   setEffectsVolume(volume: number) {
     this.effectsVolume = Math.max(0, Math.min(1, volume));
+  }
+
+  async handleAppStateChange(nextAppState: string) {
+    if (nextAppState === 'background') {
+      await this.pauseBackgroundMusic();
+    } else if (nextAppState === 'active' && !this.isMuted) {
+      await this.playBackgroundMusic();
+    }
   }
 
   async cleanup() {
