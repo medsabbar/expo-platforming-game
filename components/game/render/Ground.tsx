@@ -1,5 +1,6 @@
 import { Group, Rect } from "@shopify/react-native-skia";
 import React from "react";
+// Ground made static again (no horizontal scroll)
 import { BiomeDef, GroundTile } from "../engine/types";
 
 interface GroundProps {

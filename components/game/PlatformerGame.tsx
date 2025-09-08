@@ -1,4 +1,4 @@
-import { Canvas, Circle, Group, Rect, Skia } from "@shopify/react-native-skia";
+import { Canvas, Group, Rect, Skia } from "@shopify/react-native-skia";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Pressable,
@@ -14,7 +14,7 @@ import { GameStorage } from "@/utils/storage";
 // Extracted types & helpers
 import { BIOME_DURATION, BIOME_TRANSITION, BIOMES } from "./engine/biomes";
 import { computeDayFactor, cycleDuration, paletteFor } from "./engine/dayNight";
-import { buildGroundTiles } from "./engine/ground";
+import { buildGroundTiles, recycleGroundTiles, TILE_SIZE } from "./engine/ground";
 import { BiomeDef, GroundTile, Particle, Platform } from "./engine/types";
 import { Clouds } from "./render/Clouds";
 import { Ground } from "./render/Ground";
@@ -41,7 +41,9 @@ export const PlatformerGame: React.FC = () => {
 
   const gravity = 1700; // slightly stronger for a snappier arc
   const jumpVelocity = -780; // faster initial lift for a smoother perceived jump
-  const scrollSpeed = 180; // slowed platform speed for calmer motion
+  const scrollSpeed = 180; // slowed platform speed for calmer motion (grounds follow)
+  // Ground behavior flags
+  const GROUND_LOCK_BIOME = false; // set true if you also want to stop biome transitions/color cross-fades
   const platforms = useRef<Platform[]>([]);
   const score = useRef(0);
   const bestScore = useRef(0);
@@ -233,43 +235,69 @@ export const PlatformerGame: React.FC = () => {
   }, []);
 
   const update = (dt: number) => {
-    // Biome timing & cross-fade management
-    if (biomeTransitionRef.current > 0) {
-      biomeTransitionRef.current += dt;
-      if (biomeTransitionRef.current >= BIOME_TRANSITION) {
-        // finalize transition
-        biomeTransitionRef.current = 0;
-        biomeIndexRef.current = nextBiomeIndexRef.current;
-        nextBiomeIndexRef.current = biomeIndexRef.current + 1;
-        biomeTimerRef.current = 0;
-        // swap active ground buffer
-        activeGroundSet.current = activeGroundSet.current === "A" ? "B" : "A";
-        // preload following biome into inactive buffer
-        buildGroundForBiome(
-          nextBiomeIndexRef.current,
-          activeGroundSet.current === "A" ? "B" : "A"
-        );
+    // Biome timing & cross-fade management (can be disabled by GROUND_LOCK_BIOME)
+    if (!GROUND_LOCK_BIOME) {
+      if (biomeTransitionRef.current > 0) {
+        biomeTransitionRef.current += dt;
+        if (biomeTransitionRef.current >= BIOME_TRANSITION) {
+          biomeTransitionRef.current = 0;
+          biomeIndexRef.current = nextBiomeIndexRef.current;
+          nextBiomeIndexRef.current = biomeIndexRef.current + 1;
+          biomeTimerRef.current = 0;
+          activeGroundSet.current = activeGroundSet.current === "A" ? "B" : "A";
+          buildGroundForBiome(
+            nextBiomeIndexRef.current,
+            activeGroundSet.current === "A" ? "B" : "A"
+          );
+        }
+      } else {
+        biomeTimerRef.current += dt;
+        if (biomeTimerRef.current >= BIOME_DURATION) {
+          biomeTransitionRef.current = 0.00001; // start next frame
+          buildGroundForBiome(
+            nextBiomeIndexRef.current,
+            activeGroundSet.current === "A" ? "B" : "A"
+          );
+        }
       }
     } else {
-      biomeTimerRef.current += dt;
-      if (biomeTimerRef.current >= BIOME_DURATION) {
-        biomeTransitionRef.current = 0.00001; // start transition next frame
-        buildGroundForBiome(
-          nextBiomeIndexRef.current,
-          activeGroundSet.current === "A" ? "B" : "A"
-        );
-      }
+      biomeTransitionRef.current = 0;
+      nextBiomeIndexRef.current = biomeIndexRef.current; // freeze on current biome
     }
 
     // Wind evolution
     windRef.current =
       Math.sin(timeRef.current * 0.12) * 28 +
       Math.sin(timeRef.current * 0.53) * 6;
-    // Scroll platforms left
+    // Scroll platforms & ground left
     let furthestRight = 0;
+    const dx = scrollSpeed * dt;
     for (const p of platforms.current) {
-      p.x -= scrollSpeed * dt;
+      p.x -= dx;
       furthestRight = Math.max(furthestRight, p.x + p.w);
+    }
+    // Move both ground tile buffers (during transition we animate both)
+    const scrollTiles = (tiles: GroundTile[]) => {
+      for (const t of tiles) t.x -= dx;
+      if (!tiles.length) return;
+      // Find rightmost x for recycling placement
+      let rightEdge = -Infinity;
+      for (const t of tiles) if (t.x > rightEdge) rightEdge = t.x;
+      recycleGroundTiles(
+        tiles,
+        biomeByIndex(biomeIndexRef.current),
+        -TILE_SIZE * 4,
+        rightEdge,
+        0 // keep original brightness (ground not re-lit over time)
+      );
+    };
+    scrollTiles(
+      activeGroundSet.current === "A" ? groundTilesA.current : groundTilesB.current
+    );
+    if (biomeTransitionRef.current > 0) {
+      scrollTiles(
+        activeGroundSet.current === "A" ? groundTilesB.current : groundTilesA.current
+      );
     }
 
     // Remove off-screen platforms
@@ -482,10 +510,8 @@ export const PlatformerGame: React.FC = () => {
 
   // Ground strip color blend
 
-  // Player shadow (ellipse) size based on vertical velocity & altitude
+  // Ground Y baseline (was used also for shadow sizing)
   const groundYApprox = Math.min(screenH - 40, screenH * 0.82);
-  const heightAboveGround = Math.max(0, groundYApprox - (pl.y + pl.h));
-  const shadowScale = Math.max(0.4, 1 - heightAboveGround / 600);
 
   // --- Ground (Minecraft-style tiles) ---
   // Dual buffers for cross-fade between biomes
@@ -515,16 +541,19 @@ export const PlatformerGame: React.FC = () => {
 
   const buildGroundForBiome = useCallback(
     (biomeIdx: number, target: "A" | "B") => {
+      const colsOverride = Math.ceil(screenW / TILE_SIZE) + 8; // buffer columns for recycling
       const tiles = buildGroundTiles(
         biomeByIndex(biomeIdx),
         screenW,
         groundYApprox,
-        dayFactor
+        dayFactor,
+        colsOverride
       );
       if (target === "A") groundTilesA.current = tiles;
       else groundTilesB.current = tiles;
     },
-    [biomeByIndex, screenW, groundYApprox, dayFactor]
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [biomeByIndex, screenW, groundYApprox] // exclude dayFactor so we don't rebuild every frame
   );
 
   useEffect(() => {
@@ -608,20 +637,6 @@ export const PlatformerGame: React.FC = () => {
               height={pl.h}
               color={pl.onGround ? "#ffcc00" : "#ff8c42"}
             />
-          </Group>
-          {/* Player shadow */}
-          <Group
-            opacity={0.25 * (0.6 + 0.4 * dayFactor)}
-            transform={[
-              { translateX: pl.x + pl.w / 2 },
-              { translateY: groundYApprox - 4 },
-              { scaleX: shadowScale * 1.4 },
-              { scaleY: shadowScale * 0.55 },
-              { translateX: -pl.w / 2 },
-              { translateY: -pl.h / 2 },
-            ]}
-          >
-            <Circle cx={pl.w / 2} cy={pl.h / 2} r={pl.w / 2} color="#000000" />
           </Group>
         </Canvas>
       </Pressable>
