@@ -1,11 +1,11 @@
-import { Audio } from 'expo-av';
-import { InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av/build/Audio.types';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import type { AudioPlayer, AudioSource, AudioMode } from 'expo-audio';
 
 export type SoundEffect = 'jump' | 'death';
 
 class AudioManager {
-  private backgroundMusic: Audio.Sound | null = null;
-  private soundEffects: { [key in SoundEffect]?: Audio.Sound } = {};
+  private backgroundMusic: AudioPlayer | null = null;
+  private soundEffects: { [key in SoundEffect]?: AudioPlayer } = {};
   private isMuted = false;
   private musicVolume = 0.6;
   private effectsVolume = 0.8;
@@ -13,57 +13,61 @@ class AudioManager {
   async initialize() {
     try {
       // Configure audio mode for games
-      await Audio.setAudioModeAsync({
+      await setAudioModeAsync({
         allowsRecordingIOS: false,
         staysActiveInBackground: false,
-        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
         playsInSilentModeIOS: true,
         shouldDuckAndroid: true,
-        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
         playThroughEarpieceAndroid: false,
-      });
+      } as Partial<AudioMode>);
 
-      // Since we don't have audio files yet, we'll create simple programmatic sounds
+      // Try to load audio files, but don't fail if they don't exist
       await this.loadSounds();
     } catch (error) {
       console.warn('Failed to initialize audio:', error);
+      console.log('Audio will fall back to programmatic sounds where available');
     }
   }
 
   private async loadSounds() {
     try {
-      // Load background music
-      const { sound: backgroundMusic } = await Audio.Sound.createAsync(
-        require('@/assets/sounds/background-music.mp3'),
-        { 
-          shouldPlay: false, 
-          isLooping: true,
-          volume: this.musicVolume 
-        }
-      );
-      this.backgroundMusic = backgroundMusic;
+      // Try to load background music - this will likely fail since it's a placeholder
+      try {
+        this.backgroundMusic = createAudioPlayer({
+          assetId: require('@/assets/sounds/background-music.mp3')
+        });
+        this.backgroundMusic.volume = this.musicVolume;
+        this.backgroundMusic.loop = true;
+        console.log('Background music loaded successfully');
+      } catch (error) {
+        console.log('Background music file not available (placeholder), using programmatic music');
+        this.backgroundMusic = null;
+      }
 
-      // Load jump sound effect
-      const { sound: jumpSound } = await Audio.Sound.createAsync(
-        require('@/assets/sounds/jump.mp3'),
-        { 
-          shouldPlay: false, 
-          volume: this.effectsVolume 
-        }
-      );
-      this.soundEffects.jump = jumpSound;
+      // Try to load jump sound effect
+      try {
+        this.soundEffects.jump = createAudioPlayer({
+          assetId: require('@/assets/sounds/jump.mp3')
+        });
+        this.soundEffects.jump.volume = this.effectsVolume;
+        console.log('Jump sound loaded successfully');
+      } catch (error) {
+        console.log('Jump sound file not available (placeholder), using programmatic sound');
+        this.soundEffects.jump = undefined;
+      }
 
-      // Load death sound effect
-      const { sound: deathSound } = await Audio.Sound.createAsync(
-        require('@/assets/sounds/death.mp3'),
-        { 
-          shouldPlay: false, 
-          volume: this.effectsVolume 
-        }
-      );
-      this.soundEffects.death = deathSound;
+      // Try to load death sound effect
+      try {
+        this.soundEffects.death = createAudioPlayer({
+          assetId: require('@/assets/sounds/death.mp3')
+        });
+        this.soundEffects.death.volume = this.effectsVolume;
+        console.log('Death sound loaded successfully');
+      } catch (error) {
+        console.log('Death sound file not available (placeholder), using programmatic sound');
+        this.soundEffects.death = undefined;
+      }
 
-      console.log('Audio files loaded successfully');
     } catch (error) {
       console.warn('Failed to load audio files, falling back to programmatic sounds:', error);
       // Keep the fallback programmatic sound functionality
@@ -75,11 +79,13 @@ class AudioManager {
 
     try {
       if (this.backgroundMusic) {
-        await this.backgroundMusic.setVolumeAsync(this.musicVolume);
-        await this.backgroundMusic.playAsync();
+        this.backgroundMusic.volume = this.musicVolume;
+        this.backgroundMusic.play();
         console.log('Background music started playing');
       } else {
         console.log('Background music not loaded, would start playing');
+        // For now, we'll just use silence since creating programmatic background music is complex
+        // In the future, we could create a simple melody using Web Audio API
       }
     } catch (error) {
       console.warn('Failed to play background music:', error);
@@ -89,9 +95,9 @@ class AudioManager {
   async stopBackgroundMusic() {
     if (this.backgroundMusic) {
       try {
-        await this.backgroundMusic.stopAsync();
-        await this.backgroundMusic.unloadAsync();
-        this.backgroundMusic = null;
+        this.backgroundMusic.pause();
+        // Note: expo-audio players don't need to be "unloaded" like expo-av
+        console.log('Background music stopped');
       } catch (error) {
         console.warn('Failed to stop background music:', error);
       }
@@ -102,14 +108,16 @@ class AudioManager {
     if (this.isMuted) return;
 
     try {
-      const sound = this.soundEffects[effect];
-      if (sound) {
+      const player = this.soundEffects[effect];
+      if (player) {
         // Reset to beginning and play
-        await sound.setPositionAsync(0);
-        await sound.setVolumeAsync(this.effectsVolume);
-        await sound.playAsync();
+        await player.seekTo(0);
+        player.volume = this.effectsVolume;
+        player.play();
+        console.log(`Playing sound effect: ${effect}`);
       } else {
         // Fallback to programmatic sound for web or if file failed to load
+        console.log(`Using programmatic sound for: ${effect}`);
         this.playProgrammaticSound(effect);
       }
     } catch (error) {
@@ -121,9 +129,16 @@ class AudioManager {
 
   private playProgrammaticSound(effect: SoundEffect) {
     // Only works on web platform, but provides immediate feedback
-    if (typeof window !== 'undefined' && window.AudioContext) {
+    if (typeof window !== 'undefined' && (window.AudioContext || (window as any).webkitAudioContext)) {
       try {
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const audioContext = new AudioContextClass();
+        
+        // Resume audio context if suspended (Chrome auto-play policy)
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+        
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
 
@@ -147,9 +162,12 @@ class AudioManager {
         }
 
         oscillator.start(audioContext.currentTime);
+        console.log(`Played programmatic sound for: ${effect}`);
       } catch (error) {
-        console.warn('Web Audio API not available:', error);
+        console.warn('Web Audio API error:', error);
       }
+    } else {
+      console.log(`Programmatic sound not available for: ${effect} (not on web)`);
     }
   }
 
@@ -165,7 +183,8 @@ class AudioManager {
   async pauseBackgroundMusic() {
     if (this.backgroundMusic) {
       try {
-        await this.backgroundMusic.pauseAsync();
+        this.backgroundMusic.pause();
+        console.log('Background music paused');
       } catch (error) {
         console.warn('Failed to pause background music:', error);
       }
@@ -175,7 +194,7 @@ class AudioManager {
   setMusicVolume(volume: number) {
     this.musicVolume = Math.max(0, Math.min(1, volume));
     if (this.backgroundMusic) {
-      this.backgroundMusic.setVolumeAsync(this.musicVolume);
+      this.backgroundMusic.volume = this.musicVolume;
     }
   }
 
@@ -195,16 +214,18 @@ class AudioManager {
     await this.stopBackgroundMusic();
     
     // Cleanup sound effects
-    for (const sound of Object.values(this.soundEffects)) {
-      if (sound) {
+    for (const player of Object.values(this.soundEffects)) {
+      if (player) {
         try {
-          await sound.unloadAsync();
+          player.pause();
+          // Note: expo-audio players are automatically cleaned up
         } catch (error) {
           console.warn('Failed to cleanup sound effect:', error);
         }
       }
     }
     this.soundEffects = {};
+    console.log('Audio manager cleaned up');
   }
 }
 
