@@ -1,4 +1,4 @@
-import type { AudioMode, AudioPlayer } from "expo-audio";
+import type { AudioPlayer } from "expo-audio";
 import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 
 export type SoundEffect = "jump" | "death";
@@ -12,14 +12,15 @@ class AudioManager {
 
   async initialize() {
     try {
-      // Configure audio mode for games
+      // Configure audio mode for games (expo-audio API)
       await setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      } as Partial<AudioMode>);
+        // iOS-only option (safe to include; ignored on Android)
+        playsInSilentMode: true,
+        // Android options
+        shouldPlayInBackground: false,
+        shouldRouteThroughEarpiece: false,
+        interruptionModeAndroid: "duckOthers",
+      });
 
       // Try to load audio files, but don't fail if they don't exist
       await this.loadSounds();
@@ -34,9 +35,9 @@ class AudioManager {
   private async loadSounds() {
     // Try to load background music - this will likely fail since it's a placeholder
     try {
-      this.backgroundMusic = createAudioPlayer({
-        assetId: require("@/assets/sounds/background-music.mp3"),
-      });
+      this.backgroundMusic = createAudioPlayer(
+        require("../assets/sounds/background-music.mp3")
+      );
       this.backgroundMusic.volume = this.musicVolume;
       this.backgroundMusic.loop = true;
       console.log("Background music loaded successfully");
@@ -49,9 +50,9 @@ class AudioManager {
 
     // Try to load jump sound effect
     try {
-      this.soundEffects.jump = createAudioPlayer({
-        assetId: require("@/assets/sounds/jump.mp3"),
-      });
+      this.soundEffects.jump = createAudioPlayer(
+        require("../assets/sounds/jump.mp3")
+      );
       this.soundEffects.jump.volume = this.effectsVolume;
       console.log("Jump sound loaded successfully");
     } catch (error) {
@@ -63,9 +64,9 @@ class AudioManager {
 
     // Try to load death sound effect
     try {
-      this.soundEffects.death = createAudioPlayer({
-        assetId: require("@/assets/sounds/death.mp3"),
-      });
+      this.soundEffects.death = createAudioPlayer(
+        require("../assets/sounds/death.mp3")
+      );
       this.soundEffects.death.volume = this.effectsVolume;
       console.log("Death sound loaded successfully");
     } catch (error) {

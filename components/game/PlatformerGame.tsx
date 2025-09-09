@@ -75,6 +75,10 @@ export const PlatformerGame: React.FC = () => {
   // Removed obsolete tick-based cloud movement; using elapsed time instead
   const timeRef = useRef(0); // elapsed seconds
   // (moved to engine/dayNight)
+  // Fixed-timestep accumulator for smoother updates
+  const accumulatorRef = useRef(0);
+  const stepRef = useRef(1 / 60); // 60 Hz physics/update step
+  const rafIdRef = useRef<number | null>(null);
 
   // Stars (night) generated once
   const stars = useRef<{ x: number; y: number; r: number; tw: number }[]>([]);
@@ -115,9 +119,10 @@ export const PlatformerGame: React.FC = () => {
       const w = 180 + Math.random() * 140; // width range
       const h = 120 + Math.random() * 90; // height
       const peakY = baseFar - h;
-      const path = (Skia && Skia.Path) ? Skia.Path.MakeFromSVGString(
-        makeTriangle(cursor, w, baseFar, peakY)
-      ) : null;
+      const path =
+        Skia && Skia.Path
+          ? Skia.Path.MakeFromSVGString(makeTriangle(cursor, w, baseFar, peakY))
+          : null;
       if (path) far.push(path);
       cursor += w * 0.6; // overlap for ridge effect
     }
@@ -126,9 +131,12 @@ export const PlatformerGame: React.FC = () => {
       const w = 200 + Math.random() * 160;
       const h = 160 + Math.random() * 120;
       const peakY = baseNear - h;
-      const path = (Skia && Skia.Path) ? Skia.Path.MakeFromSVGString(
-        makeTriangle(cursor, w, baseNear, peakY)
-      ) : null;
+      const path =
+        Skia && Skia.Path
+          ? Skia.Path.MakeFromSVGString(
+              makeTriangle(cursor, w, baseNear, peakY)
+            )
+          : null;
       if (path) near.push(path);
       cursor += w * 0.55;
     }
@@ -162,18 +170,13 @@ export const PlatformerGame: React.FC = () => {
     spawnCounter.current = 0;
   }, [screenH]);
 
-  // Load best score and initialize audio on component mount
+  // Load best score on component mount (defer audio until user interaction)
   useEffect(() => {
     const loadBestScore = async () => {
       bestScore.current = await GameStorage.getBestScore();
     };
-    const initializeAudio = async () => {
-      await audioManager.initialize();
-      await audioManager.playBackgroundMusic();
-    };
     loadBestScore();
-    initializeAudio();
-    
+
     // Cleanup audio when component unmounts
     return () => {
       audioManager.cleanup();
@@ -225,37 +228,56 @@ export const PlatformerGame: React.FC = () => {
       lastJumpTime.current = now;
       doubleJumpAvailable.current = true;
       // Play jump sound effect
-      audioManager.playSoundEffect('jump');
+      audioManager.playSoundEffect("jump");
     } else if (doubleJumpAvailable.current) {
       player.current.vy = jumpVelocity * 0.85; // reduced force for second jump
       player.current.onGround = false;
       doubleJumpAvailable.current = false;
       lastJumpTime.current = now;
       // Play jump sound effect for double jump
-      audioManager.playSoundEffect('jump');
+      audioManager.playSoundEffect("jump");
     }
   };
 
   // Input also via overlay Pressable (for accessibility / web fallback)
-  const onPress = () => handleJump();
+  const audioInitializedRef = useRef(false);
+  const onPress = async () => {
+    if (!audioInitializedRef.current) {
+      try {
+        await audioManager.initialize();
+        await audioManager.playBackgroundMusic();
+        audioInitializedRef.current = true;
+      } catch {}
+    }
+    handleJump();
+  };
 
-  // Game loop via requestAnimationFrame
+  // Game loop via requestAnimationFrame (fixed timestep)
   useEffect(() => {
     let mounted = true;
     let last = performance.now();
     const loop = (now: number) => {
       if (!mounted) return;
-      const dt = Math.min(0.033, (now - last) / 1000); // clamp delta (avoid spikes)
+      const dt = Math.min(0.1, (now - last) / 1000); // clamp very large spikes
       last = now;
-      if (!gameOver.current) update(dt);
-      timeRef.current += dt;
+      // Accumulate and step at fixed rate for stable motion
+      accumulatorRef.current += dt;
+      const step = stepRef.current;
+      let safety = 0;
+      while (accumulatorRef.current >= step && safety < 4) {
+        if (!gameOver.current) update(step);
+        timeRef.current += step;
+        accumulatorRef.current -= step;
+        safety++;
+      }
       // Force a re-render so Skia receives updated refs
       setFrame((f) => (f + 1) & 0xffff);
-      requestAnimationFrame(loop);
+      rafIdRef.current = requestAnimationFrame(loop);
     };
-    requestAnimationFrame(loop);
+    rafIdRef.current = requestAnimationFrame(loop);
     return () => {
       mounted = false;
+      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
     };
     // update is stable because it doesn't capture changing state (only refs)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -374,7 +396,7 @@ export const PlatformerGame: React.FC = () => {
     if (pl.y > screenH + 40) {
       gameOver.current = true;
       // Play death sound effect
-      audioManager.playSoundEffect('death');
+      audioManager.playSoundEffect("death");
       // Update best score when game ends
       GameStorage.updateBestScoreIfHigher(score.current).then((updated) => {
         if (updated) {
@@ -480,9 +502,11 @@ export const PlatformerGame: React.FC = () => {
 
   // Cloud path factory (simple puffy shape)
   const cloudPath = useRef(
-    (Skia && Skia.Path) ? Skia.Path.MakeFromSVGString(
-      "M20 30 C10 30 5 22 8 16 C4 5 18 2 24 8 C28 2 40 4 39 14 C48 14 50 22 46 27 C52 40 34 44 30 36 C26 40 16 40 14 34 C10 38 2 36 4 28 Z"
-    ) : null
+    Skia && Skia.Path
+      ? Skia.Path.MakeFromSVGString(
+          "M20 30 C10 30 5 22 8 16 C4 5 18 2 24 8 C28 2 40 4 39 14 C48 14 50 22 46 27 C52 40 34 44 30 36 C26 40 16 40 14 34 C10 38 2 36 4 28 Z"
+        )
+      : null
   );
   const t = timeRef.current; // seconds
   const cycleT = (t % cycleDuration) / cycleDuration; // 0..1
